@@ -1,0 +1,51 @@
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.venv/
+venv/
+env/
+
+# IDE/Editor
+.vscode/
+.idea/
+
+# Test/cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Coverage/build
+.coverage
+coverage.xml
+dist/
+build/
+
+# Env files
+.env
+.env.*
+
+# Local databases
+*.db
+morning_brief.db
+
+# Credentials/tokens (DO NOT COMMIT SECRETS)
+token.json
+google_credentials.json
+client_secret.json
+client_secret_*.json
+
+# OAuth tokens
+token.pickle
+
+# Logs
+*.log
+
+# SQLite journals
+*.db-journal
