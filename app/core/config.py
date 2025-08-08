@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     # Theme colors for email (hex or CSS color names)
     theme_accent: str = "#6366f1"
     theme_accent2: str = "#a855f7"
+
+    # Content intelligence
+    enable_talking_points: bool = True
+    talking_points_use_llm: bool = False
+    talking_points_max: int = 2
     
     class Config:
         env_file = ".env"

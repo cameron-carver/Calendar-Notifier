@@ -187,6 +187,23 @@ class SummarizationService:
             about_str = format_about(event.description, event.attendees)
             # Single-line, no location
             line = f"📅 {time_range} {event.title}{attendees_str}{about_str}"
+            # Optional talking points (rule-based) if enabled and not using LLM
+            if getattr(settings, 'enable_talking_points', False) and not getattr(settings, 'talking_points_use_llm', False):
+                tips: List[str] = []
+                # Company-based
+                companies = [att.company for att in event.attendees if getattr(att, 'company', None)]
+                if companies:
+                    tips.append(f"Ask about current priorities at {companies[0]}")
+                # Materials-based
+                any_materials = any(getattr(att, 'materials', None) for att in event.attendees)
+                if any_materials:
+                    tips.append("Review shared materials before joining")
+                # Relationship-based
+                if any(getattr(att, 'last_note_summary', None) for att in event.attendees):
+                    tips.append("Skim last Affinity note for context")
+                if tips:
+                    tips = tips[: max(1, getattr(settings, 'talking_points_max', 2))]
+                    line += "\n   • " + "\n   • ".join(tips)
             lines.append(line)
 
         return header + "\n".join(lines) + "\n"
