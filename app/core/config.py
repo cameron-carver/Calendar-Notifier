@@ -34,6 +34,15 @@ class Settings(BaseSettings):
     filter_require_non_owner_attendee: bool = True
     filter_external_only: bool = True
     filter_exclude_recurring: bool = True
+
+    # Personalization
+    # Comma-separated list of internal domains (e.g., blackhornvc.com,company.local)
+    internal_domains: str | None = None
+    # Limit to upcoming window (hours) when generating for today; 0 disables
+    time_window_hours: int = 0
+    # Theme colors for email (hex or CSS color names)
+    theme_accent: str = "#6366f1"
+    theme_accent2: str = "#a855f7"
     
     class Config:
         env_file = ".env"

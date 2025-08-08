@@ -241,8 +241,8 @@ class GmailService:
                     --text: #1f2937;
                     --muted: #6b7280;
                     --line: #eef2f7;
-                    --accent: #6366f1; /* indigo-500 */
-                    --accent2: #a855f7; /* purple-500 */
+                    --accent: {html_lib.escape(settings.theme_accent)}; /* accent */
+                    --accent2: {html_lib.escape(settings.theme_accent2)}; /* secondary */
                     --chip-bg: #eef2ff; /* indigo-50 */
                 }}
                 body {{

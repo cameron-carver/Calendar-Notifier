@@ -62,6 +62,14 @@ class GoogleCalendarService:
         start_utc = start_local.astimezone(pytz.UTC)
         end_utc = end_local.astimezone(pytz.UTC)
 
+        # Apply personalization time window (only for today)
+        now_local = datetime.now(local_tz)
+        if settings.time_window_hours and settings.time_window_hours > 0 and start_local.date() == now_local.date():
+            start_local = max(start_local, now_local)
+            end_local = min(end_local, start_local + timedelta(hours=settings.time_window_hours))
+            start_utc = start_local.astimezone(pytz.UTC)
+            end_utc = end_local.astimezone(pytz.UTC)
+
         # RFC3339 format with Z suffix
         time_min = start_utc.isoformat().replace('+00:00', 'Z')
         time_max = end_utc.isoformat().replace('+00:00', 'Z')
@@ -123,11 +131,18 @@ class GoogleCalendarService:
                             return ''
 
                     owner_domain = extract_domain(owner_identifier) if '@' in owner_identifier else ''
+                    # Internal domains set
+                    internal_domains_set = set(d.strip().lower() for d in (settings.internal_domains or '').split(',') if d.strip())
                     external_attendees = (
                         [a for a in non_owner_attendees if extract_domain(a.email) != owner_domain]
                         if (owner_domain and settings.filter_external_only)
                         else non_owner_attendees
                     )
+                    # If internal domains configured, treat same-domain as internal and prefer externals
+                    if internal_domains_set:
+                        externals = [a for a in external_attendees if extract_domain(a.email) not in internal_domains_set]
+                        external_attendees = externals if externals else external_attendees
+
                     if settings.filter_external_only and len(external_attendees) == 0:
                         continue
 
