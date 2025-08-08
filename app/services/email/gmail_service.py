@@ -2,13 +2,17 @@ import os
 import base64
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import re
+import html as html_lib
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from typing import Optional
+from typing import Optional, List
 from app.core.config import settings
+from app.schemas.brief import MeetingEvent, AttendeeInfo
+from dateutil import parser as dateutil_parser
 
 
 class GmailService:
@@ -81,97 +85,298 @@ class GmailService:
             print(f"Error sending email: {e}")
             return False
     
-    def create_html_brief(self, content: str) -> str:
-        """Convert plain text brief to HTML format."""
+    def create_html_brief(self, content: str, events: Optional[List[MeetingEvent]] = None) -> str:
+        """Render a clean, newsletter-style HTML from the concise text brief.
+        If `events` are provided, use structured data (including LinkedIn links) instead of regex parsing.
+        """
+        lines = [ln.strip() for ln in content.splitlines()]
+        title = "🌅 Morning Brief"
+        subtitle = "Your daily meeting preparation summary"
+        items = []
+
+        def normalize_name(raw: str) -> str:
+            if not raw:
+                return ""
+            first = raw.strip().split()[0]
+            return first[:1].upper() + first[1:]
+
+        # Extract title/subtitle from first non-empty lines, keep defaults if missing
+        non_empty = [ln for ln in lines if ln]
+        if non_empty:
+            title = html_lib.escape(non_empty[0])
+        if len(non_empty) > 1:
+            subtitle = html_lib.escape(non_empty[1])
+
+        # If events are available, build items from structured data to include LinkedIn links
+        if events:
+            for ev in events:
+                time_range = f"{ev.start_time.strftime('%I:%M %p').lstrip('0')}–{ev.end_time.strftime('%I:%M %p').lstrip('0')}"
+                attendees_html_parts = []
+                for att in ev.attendees[:8]:
+                    name = normalize_name(att.name or att.email.split('@')[0])
+                    linkedin = getattr(att, 'linkedin_url', None)
+                    # Fallback: Google search link to LinkedIn profile if none provided
+                    if not linkedin:
+                        q = name
+                        company = getattr(att, 'company', None)
+                        if company:
+                            q += f" {company}"
+                        q += " linkedin"
+                        linkedin = f"https://www.google.com/search?q={html_lib.escape(q)}"
+                    attendees_html_parts.append(
+                        '<a href="' + linkedin + '" target="_blank" rel="noopener noreferrer">' + html_lib.escape(name) + '<span class="li-icon">↗</span></a>'
+                    )
+                attendees_joined = ", ".join(attendees_html_parts)
+                about_text = ""
+                # Prefer last note summary, else recent email/context, else description
+                for att in ev.attendees:
+                    if getattr(att, 'last_note_summary', None):
+                        about_text = att.last_note_summary
+                        break
+                if not about_text and ev.description:
+                    about_text = re.sub(r"<[^>]+>", " ", html_lib.unescape(ev.description))
+                about_text = (about_text[:120] + "…") if about_text and len(about_text) > 120 else about_text
+
+                # Context date from Affinity last note
+                context_text = ""
+                for att in ev.attendees:
+                    if getattr(att, 'last_note_date', None):
+                        try:
+                            dt = dateutil_parser.isoparse(att.last_note_date)
+                            context_text = f"Context: last note on {dt.strftime('%b %d, %Y')}"
+                        except Exception:
+                            context_text = f"Context: last note on {html_lib.escape(att.last_note_date[:10])}"
+                        break
+
+                # Meeting size chip
+                count = len(ev.attendees)
+                if count >= 8:
+                    chip_class = 'chip-large'
+                elif count >= 4:
+                    chip_class = 'chip-medium'
+                else:
+                    chip_class = 'chip-small'
+                chip_html = f"<span class=\"chip {chip_class}\">{count} attendee{'s' if count != 1 else ''}</span>"
+
+                # Collect materials URLs from attendees (Affinity)
+                materials_urls = []
+                for att in ev.attendees:
+                    urls = getattr(att, 'materials', None) or []
+                    for u in urls:
+                        if u not in materials_urls:
+                            materials_urls.append(u)
+                materials_urls = materials_urls[:3]
+
+                items.append({
+                    "time": html_lib.escape(time_range),
+                    "title": html_lib.escape(ev.title or "Untitled Meeting"),
+                    "attendees_html": attendees_joined,
+                    "about": html_lib.escape(about_text) if about_text else "",
+                    "context": html_lib.escape(context_text) if context_text else "",
+                    "size_chip": chip_html,
+                    "materials": materials_urls,
+                })
+        else:
+            # Regex to parse meeting one-liners produced by fallback formatter
+            pattern = re.compile(r"^📅\s*(\d{1,2}:\d{2}\s*[AP]M–\d{1,2}:\d{2}\s*[AP]M)\s+(.*?)(?:\s+—\s+(.*?))?(?:\s+— About:\s+(.*))?$")
+
+            for ln in lines:
+                if not ln.startswith("📅 "):
+                    continue
+                m = pattern.match(ln)
+                if not m:
+                    # Fallback: just show the line
+                    items.append({
+                        "time": "",
+                        "title": html_lib.escape(ln.replace('📅', '').strip()),
+                        "attendees_html": "",
+                        "about": "",
+                    })
+                    continue
+                time_range, title_txt, attendees_txt, about_txt = m.groups()
+                items.append({
+                    "time": html_lib.escape(time_range or ""),
+                    "title": html_lib.escape(title_txt or ""),
+                    "attendees_html": html_lib.escape(attendees_txt or ""),
+                    "about": html_lib.escape((about_txt or "").rstrip(".")),
+                })
+
+        # Build newsletter HTML
+        items_html = []
+        for it in items:
+            attendees_html = f"<span class=\"attendees\">— {it['attendees_html']}</span>" if it.get("attendees_html") else ""
+            about_html = f"<div class=\"about\">About: {it['about']}</div>" if it["about"] else ""
+            context_html = f"<div class=\"about\">{it['context']}</div>" if it.get("context") else ""
+            # Materials row (compact) if present
+            materials_html = ""
+            if it.get('materials'):
+                links = []
+                for u in it['materials']:
+                    esc = html_lib.escape(u)
+                    links.append(f'<a href="{esc}" target="_blank" rel="noopener noreferrer">link</a>')
+                materials_html = f"<div class=\"materials\">Materials: {' • '.join(links)}</div>"
+
+            items_html.append(
+                f"""
+                <li class="item">
+                    <span class="time">{it['time']}</span>
+                    <span class="dot">•</span>
+                    <span class="title">{it['title']}</span> {it.get('size_chip','')}
+                    {attendees_html}
+                    {about_html}
+                    {context_html}
+                    {materials_html}
+                </li>
+                """
+            )
+
         html_template = f"""
         <!DOCTYPE html>
         <html>
         <head>
             <meta charset="utf-8">
             <style>
+                :root {{
+                    --bg: #ffffff;
+                    --text: #1f2937;
+                    --muted: #6b7280;
+                    --line: #eef2f7;
+                    --accent: #6366f1; /* indigo-500 */
+                    --accent2: #a855f7; /* purple-500 */
+                    --chip-bg: #eef2ff; /* indigo-50 */
+                }}
                 body {{
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                     line-height: 1.6;
-                    color: #333;
-                    max-width: 600px;
+                    color: var(--text);
+                    max-width: 720px;
                     margin: 0 auto;
-                    padding: 20px;
+                    padding: 28px 20px;
+                    background: var(--bg);
                 }}
                 .header {{
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    color: white;
-                    padding: 20px;
-                    border-radius: 8px;
-                    margin-bottom: 20px;
+                    margin-bottom: 16px;
                 }}
-                .meeting {{
-                    background: #f8f9fa;
-                    border-left: 4px solid #667eea;
-                    padding: 15px;
-                    margin: 15px 0;
-                    border-radius: 4px;
+                .header h1 {{
+                    margin: 0 0 6px 0;
+                    font-size: 24px;
+                    letter-spacing: 0.2px;
                 }}
-                .attendee {{
-                    background: white;
-                    padding: 10px;
-                    margin: 10px 0;
-                    border-radius: 4px;
-                    border: 1px solid #e9ecef;
+                .header p {{
+                    margin: 0;
+                    color: var(--muted);
+                    font-size: 13px;
                 }}
-                .news-item {{
-                    background: #fff3cd;
-                    border: 1px solid #ffeaa7;
-                    padding: 10px;
-                    margin: 5px 0;
-                    border-radius: 4px;
+                .bar {{
+                    height: 6px;
+                    width: 100%;
+                    background: linear-gradient(90deg, var(--accent), var(--accent2));
+                    border-radius: 999px;
+                    margin: 8px 0 14px 0;
+                }}
+                ul.list {{
+                    list-style: none;
+                    padding: 0;
+                    margin: 0;
+                }}
+                .item {{
+                    padding: 14px 0;
+                    border-top: 1px solid var(--line);
+                }}
+                .item:first-child {{
+                    border-top: 0;
                 }}
                 .time {{
-                    color: #6c757d;
-                    font-size: 0.9em;
+                    color: var(--accent);
+                    font-weight: 600;
+                    font-size: 12px;
+                    background: var(--chip-bg);
+                    border: 1px solid rgba(99,102,241,0.22);
+                    padding: 4px 8px;
+                    border-radius: 999px;
                 }}
-                .company {{
-                    color: #495057;
-                    font-weight: 500;
+                .dot {{
+                    color: #c7cbd1;
+                    margin: 0 8px;
+                }}
+                .title {{
+                    font-weight: 700;
+                    font-size: 14px;
+                }}
+                .chip {{
+                    margin-left: 8px;
+                    font-size: 11px;
+                    padding: 2px 8px;
+                    border-radius: 999px;
+                    border: 1px solid transparent;
+                }}
+                .chip-small {{
+                    background: #ecfdf5;
+                    color: #065f46;
+                    border-color: rgba(16,185,129,0.25);
+                }}
+                .chip-medium {{
+                    background: #fffbeb;
+                    color: #92400e;
+                    border-color: rgba(245,158,11,0.25);
+                }}
+                .chip-large {{
+                    background: #fef2f2;
+                    color: #991b1b;
+                    border-color: rgba(239,68,68,0.25);
+                }}
+                .attendees {{
+                    color: #374151;
+                    margin-left: 8px;
+                    font-size: 13px;
+                }}
+                .li-icon {{
+                    font-size: 11px;
+                    margin-left: 2px;
+                    color: #6b7280;
+                }}
+                .about {{
+                    color: var(--muted);
+                    font-size: 12.5px;
+                    margin-top: 6px;
+                }}
+                .footer {{
+                    margin-top: 22px;
+                    padding-top: 12px;
+                    border-top: 1px solid var(--line);
+                    color: var(--muted);
+                    font-size: 12px;
+                }}
+                .materials {{
+                    margin-top: 4px;
+                    font-size: 12px;
+                    color: var(--muted);
+                }}
+                .materials a {{
+                    color: var(--accent);
+                    text-decoration: none;
                 }}
             </style>
         </head>
         <body>
             <div class="header">
-                <h1>🌅 Morning Brief</h1>
-                <p>Your daily meeting preparation summary</p>
+                <div style="background: linear-gradient(90deg, var(--accent), var(--accent2)); color: white; padding: 22px; border-radius: 14px; display: flex; align-items: center; gap: 14px;">
+                    <div style="font-size: 28px;">🌅</div>
+                    <div>
+                        <div style="font-size: 24px; font-weight: 800; letter-spacing: 0.2px;">Morning Brief</div>
+                        <div style="opacity: 0.95; font-size: 13px;">Your daily meeting preparation summary</div>
+                    </div>
+                </div>
             </div>
-            
-            <div class="content">
-                {self._convert_text_to_html(content)}
-            </div>
-            
-            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e9ecef; color: #6c757d; font-size: 0.9em;">
-                <p>Generated by Morning Brief - Calendar Notifier</p>
-            </div>
+            <ul class="list">
+                {''.join(items_html)}
+            </ul>
+            <div class="footer">Generated by Morning Brief</div>
         </body>
         </html>
         """
-        
         return html_template
     
     def _convert_text_to_html(self, text: str) -> str:
-        """Convert plain text to HTML with basic formatting."""
-        # Convert line breaks
-        html = text.replace('\n', '<br>')
-        
-        # Convert meeting titles (lines starting with 📅)
-        html = html.replace('📅 ', '<div class="meeting"><h3>📅 ')
-        html = html.replace('<br>   Time:', '</h3><p class="time">⏰ ')
-        html = html.replace('<br>   Location:', '</p><p>📍 ')
-        html = html.replace('<br>   Attendees:', '</p><p><strong>👥 Attendees:</strong></p>')
-        
-        # Convert attendee lines
-        html = html.replace('<br>     - ', '<div class="attendee">• ')
-        html = html.replace(' (', '<span class="company"> (')
-        html = html.replace(')<br>', ')</span></div>')
-        
-        # Convert news items
-        html = html.replace('<br>      - ', '<div class="news-item">📰 ')
-        html = html.replace('<br>    Recent news:', '</div><p><strong>📰 Recent News:</strong></p>')
-        
-        return html 
+        """Deprecated: kept for compatibility but unused in new renderer."""
+        return html_lib.escape(text).replace('\n', '<br>')

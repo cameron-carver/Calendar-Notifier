@@ -70,18 +70,32 @@ def create_credentials_file():
     if not os.path.exists('token.json'):
         print("❌ No token.json found. Please run setup_oauth() first.")
         return
+    if not os.path.exists('client_secret.json'):
+        print("❌ No client_secret.json found. Please provide your OAuth client secret file.")
+        return
     
     # Read the token file
     with open('token.json', 'r') as f:
         token_data = json.load(f)
     
-    # Create the credentials file with the required format
+    # Load client id/secret from client_secret.json if not present in token.json
+    with open('client_secret.json', 'r') as f:
+        client_cfg = json.load(f)
+        # Support both 'installed' and 'web' formats
+        client_info = client_cfg.get('installed') or client_cfg.get('web') or {}
+
+    client_id = token_data.get("client_id") or client_info.get("client_id")
+    client_secret = token_data.get("client_secret") or client_info.get("client_secret")
+
+    # Create the credentials file with the required format for authorized_user
     credentials_data = {
-        "client_id": token_data.get("client_id"),
-        "client_secret": token_data.get("client_secret"),
+        "client_id": client_id,
+        "client_secret": client_secret,
         "refresh_token": token_data.get("refresh_token"),
-        "token_uri": "https://oauth2.googleapis.com/token",
-        "scopes": SCOPES
+        "token": token_data.get("token") or token_data.get("access_token"),
+        "token_uri": token_data.get("token_uri", "https://oauth2.googleapis.com/token"),
+        "scopes": token_data.get("scopes", SCOPES),
+        "type": "authorized_user",
     }
     
     # Save to the file path expected by the app

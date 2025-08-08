@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     
     # API Keys
     google_calendar_credentials_file: str
+    # Comma-separated list of Google Calendar IDs (e.g., emails or calendar IDs). If empty, uses 'primary'
+    google_calendar_ids: Optional[str] = None
     affinity_api_key: str
     openai_api_key: str
     news_api_key: Optional[str] = None
@@ -27,6 +29,11 @@ class Settings(BaseSettings):
     # Optional settings
     max_news_articles_per_person: int = 3
     brief_summary_length: int = 500
+
+    # Filters
+    filter_require_non_owner_attendee: bool = True
+    filter_external_only: bool = True
+    filter_exclude_recurring: bool = True
     
     class Config:
         env_file = ".env"

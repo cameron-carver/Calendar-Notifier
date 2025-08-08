@@ -37,7 +37,11 @@ morning_brief.db
 
 # Credentials/tokens (DO NOT COMMIT SECRETS)
 token.json
+token_calendar.json
+*backup*.json
 google_credentials.json
+google_calendar_credentials.json
+google_gmail_credentials.json
 client_secret.json
 client_secret_*.json
 

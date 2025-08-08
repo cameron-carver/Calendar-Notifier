@@ -1,0 +1,189 @@
+
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                :root {
+                    --bg: #ffffff;
+                    --text: #1f2937;
+                    --muted: #6b7280;
+                    --line: #eef2f7;
+                    --accent: #6366f1; /* indigo-500 */
+                    --accent2: #a855f7; /* purple-500 */
+                    --chip-bg: #eef2ff; /* indigo-50 */
+                }
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    line-height: 1.6;
+                    color: var(--text);
+                    max-width: 720px;
+                    margin: 0 auto;
+                    padding: 28px 20px;
+                    background: var(--bg);
+                }
+                .header {
+                    margin-bottom: 16px;
+                }
+                .header h1 {
+                    margin: 0 0 6px 0;
+                    font-size: 24px;
+                    letter-spacing: 0.2px;
+                }
+                .header p {
+                    margin: 0;
+                    color: var(--muted);
+                    font-size: 13px;
+                }
+                .bar {
+                    height: 6px;
+                    width: 100%;
+                    background: linear-gradient(90deg, var(--accent), var(--accent2));
+                    border-radius: 999px;
+                    margin: 8px 0 14px 0;
+                }
+                ul.list {
+                    list-style: none;
+                    padding: 0;
+                    margin: 0;
+                }
+                .item {
+                    padding: 14px 0;
+                    border-top: 1px solid var(--line);
+                }
+                .item:first-child {
+                    border-top: 0;
+                }
+                .time {
+                    color: var(--accent);
+                    font-weight: 600;
+                    font-size: 12px;
+                    background: var(--chip-bg);
+                    border: 1px solid rgba(99,102,241,0.22);
+                    padding: 4px 8px;
+                    border-radius: 999px;
+                }
+                .dot {
+                    color: #c7cbd1;
+                    margin: 0 8px;
+                }
+                .title {
+                    font-weight: 700;
+                    font-size: 14px;
+                }
+                .chip {
+                    margin-left: 8px;
+                    font-size: 11px;
+                    padding: 2px 8px;
+                    border-radius: 999px;
+                    border: 1px solid transparent;
+                }
+                .chip-small {
+                    background: #ecfdf5;
+                    color: #065f46;
+                    border-color: rgba(16,185,129,0.25);
+                }
+                .chip-medium {
+                    background: #fffbeb;
+                    color: #92400e;
+                    border-color: rgba(245,158,11,0.25);
+                }
+                .chip-large {
+                    background: #fef2f2;
+                    color: #991b1b;
+                    border-color: rgba(239,68,68,0.25);
+                }
+                .attendees {
+                    color: #374151;
+                    margin-left: 8px;
+                    font-size: 13px;
+                }
+                .li-icon {
+                    font-size: 11px;
+                    margin-left: 2px;
+                    color: #6b7280;
+                }
+                .about {
+                    color: var(--muted);
+                    font-size: 12.5px;
+                    margin-top: 6px;
+                }
+                .footer {
+                    margin-top: 22px;
+                    padding-top: 12px;
+                    border-top: 1px solid var(--line);
+                    color: var(--muted);
+                    font-size: 12px;
+                }
+                .materials {
+                    margin-top: 4px;
+                    font-size: 12px;
+                    color: var(--muted);
+                }
+                .materials a {
+                    color: var(--accent);
+                    text-decoration: none;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <div style="background: linear-gradient(90deg, var(--accent), var(--accent2)); color: white; padding: 22px; border-radius: 14px; display: flex; align-items: center; gap: 14px;">
+                    <div style="font-size: 28px;">🌅</div>
+                    <div>
+                        <div style="font-size: 24px; font-weight: 800; letter-spacing: 0.2px;">Morning Brief</div>
+                        <div style="opacity: 0.95; font-size: 13px;">Your daily meeting preparation summary</div>
+                    </div>
+                </div>
+            </div>
+            <ul class="list">
+                
+                <li class="item">
+                    <span class="time">10:00 AM–10:30 AM</span>
+                    <span class="dot">•</span>
+                    <span class="title">Dynamo x Blackhorn</span> <span class="chip chip-small">3 attendees</span>
+                    <span class="attendees">— James, Kacy, Madeline</span>
+                    <div class="about">About: 
+________________________________________________________________________________
+Microsoft Teams Need help? 
+Join the m…</div>
+                    
+                    
+                </li>
+                
+                <li class="item">
+                    <span class="time">1:30 PM–2:00 PM</span>
+                    <span class="dot">•</span>
+                    <span class="title">Cameron Carver and Adi H. Omesy</span> <span class="chip chip-small">1 attendee</span>
+                    <span class="attendees">— Omesyadi</span>
+                    <div class="about">About: Event Name
+30 Minute Meeting
+
+Location: This is a Google Meet web conference.
+You can join this meeting from your comput…</div>
+                    
+                    
+                </li>
+                
+                <li class="item">
+                    <span class="time">3:30 PM–4:00 PM</span>
+                    <span class="dot">•</span>
+                    <span class="title">30 Min Meeting between Louis Castricato and Cameron Carver</span> <span class="chip chip-small">1 attendee</span>
+                    <span class="attendees">— Louis</span>
+                    <div class="about">About: What:
+30 Min Meeting between Louis Castricato and Cameron Carver
+
+Invitee Time Zone:
+America/Denver
+
+Who:
+Louis Castrica…</div>
+                    
+                    
+                </li>
+                
+            </ul>
+            <div class="footer">Generated by Morning Brief</div>
+        </body>
+        </html>
+        

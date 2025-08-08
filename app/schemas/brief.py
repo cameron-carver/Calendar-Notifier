@@ -11,6 +11,12 @@ class AttendeeInfo(BaseModel):
     title: Optional[str] = None
     linkedin_url: Optional[str] = None
     recent_emails: Optional[List[str]] = None
+    # Affinity enrichment
+    last_note_summary: Optional[str] = None
+    last_note_date: Optional[str] = None
+    materials: Optional[List[str]] = None
+    company_domain: Optional[str] = None
+    website_url: Optional[str] = None
     news_articles: Optional[List[Dict[str, Any]]] = None
 
 

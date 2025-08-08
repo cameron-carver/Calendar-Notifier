@@ -98,7 +98,10 @@ class BriefService:
         """Send the morning brief via email."""
         try:
             # Create HTML version
-            html_content = self.email_service.create_html_brief(brief_content)
+            # Regenerate events for today to include structured data for HTML rendering
+            events = self.calendar_service.get_daily_events(date.today())
+            enriched_events = await self._enrich_events(events) if events else []
+            html_content = self.email_service.create_html_brief(brief_content, events=enriched_events)
             
             # Send email
             subject = f"Morning Brief - {datetime.now().strftime('%B %d, %Y')}"

@@ -1,5 +1,7 @@
-import openai
 from typing import List, Dict, Any
+import re
+import html as html_lib
+from openai import OpenAI
 from app.core.config import settings
 from app.schemas.brief import MeetingEvent, AttendeeInfo
 
@@ -8,7 +10,8 @@ class SummarizationService:
     """Service for generating intelligent summaries using AI."""
     
     def __init__(self):
-        openai.api_key = settings.openai_api_key
+        # Initialize OpenAI v1 client
+        self.client = OpenAI(api_key=settings.openai_api_key)
     
     def generate_meeting_brief(self, events: List[MeetingEvent]) -> str:
         """Generate a comprehensive morning brief for all meetings."""
@@ -20,30 +23,31 @@ class SummarizationService:
         
         # Generate brief using OpenAI
         try:
-            response = openai.ChatCompletion.create(
-                model="gpt-4",
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
                 messages=[
                     {
                         "role": "system",
-                        "content": """You are an AI assistant that creates concise, professional morning briefs for meetings. 
-                        Your goal is to help the user be well-prepared for their meetings by providing:
-                        1. A brief overview of each meeting
-                        2. Key information about attendees
-                        3. Recent news or context about attendees/companies
-                        4. Suggested talking points or conversation starters
-                        5. Any important notes or reminders
-                        
-                        Keep the tone professional but conversational. Focus on actionable insights."""
+                        "content": (
+                            "You are an AI assistant that creates concise, professional morning briefs for meetings. "
+                            "Your goal is to help the user be well-prepared for their meetings by providing:\n"
+                            "1. A brief overview of each meeting\n"
+                            "2. Key information about attendees\n"
+                            "3. Recent news or context about attendees/companies\n"
+                            "4. Suggested talking points or conversation starters\n"
+                            "5. Any important notes or reminders\n\n"
+                            "Keep the tone professional but conversational. Focus on actionable insights."
+                        ),
                     },
                     {
                         "role": "user",
-                        "content": f"Generate a morning brief for today's meetings:\n\n{context}"
-                    }
+                        "content": f"Generate a morning brief for today's meetings:\n\n{context}",
+                    },
                 ],
-                max_tokens=settings.brief_summary_length,
-                temperature=0.7
+                max_tokens=max(256, settings.brief_summary_length),
+                temperature=0.7,
             )
-            
+
             return response.choices[0].message.content
             
         except Exception as e:
@@ -57,9 +61,6 @@ class SummarizationService:
         for event in events:
             event_info = f"Meeting: {event.title}\n"
             event_info += f"Time: {event.start_time.strftime('%I:%M %p')} - {event.end_time.strftime('%I:%M %p')}\n"
-            
-            if event.location:
-                event_info += f"Location: {event.location}\n"
             
             if event.description:
                 event_info += f"Description: {event.description}\n"
@@ -90,29 +91,105 @@ class SummarizationService:
         return "\n\n".join(context_parts)
     
     def _generate_fallback_brief(self, events: List[MeetingEvent]) -> str:
-        """Generate a basic brief without AI when AI service is unavailable."""
-        brief = f"Morning Brief - {events[0].start_time.strftime('%B %d, %Y')}\n\n"
-        brief += f"You have {len(events)} meetings scheduled today:\n\n"
-        
+        """Generate a concise brief without AI: one-liners per meeting, no locations."""
+        def format_time_range(start_dt, end_dt) -> str:
+            return f"{start_dt.strftime('%I:%M %p').lstrip('0')}–{end_dt.strftime('%I:%M %p').lstrip('0')}"
+
+        def normalize_name(raw: str) -> str:
+            if not raw:
+                return ""
+            first = raw.strip().split()[0]
+            first = re.sub(r"[^A-Za-z'\-]", "", first)
+            return first.capitalize() if first else ""
+
+        def is_internal_alias(att) -> bool:
+            n = (att.name or "").strip().lower()
+            local = (att.email.split('@')[0] if att.email else "").lower()
+            if n.startswith("internal") or local.startswith("internal"):
+                return True
+            return False
+
+        def format_attendees(attendees) -> str:
+            display: List[str] = []
+            seen = set()
+            for att in attendees:
+                if not att or is_internal_alias(att):
+                    continue
+                name = normalize_name(att.name or att.email.split('@')[0])
+                if not name:
+                    continue
+                key = name.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                display.append(name)
+            if not display:
+                return ""
+            max_names = 5
+            shown = display[:max_names]
+            extra = len(display) - len(shown)
+            people = ", ".join(shown)
+            return f" — {people}{(' +' + str(extra)) if extra > 0 else ''}"
+
+        def strip_html(text: str) -> str:
+            if not text:
+                return ""
+            # Unescape entities, strip tags, collapse whitespace
+            unescaped = html_lib.unescape(text)
+            no_tags = re.sub(r"<[^>]+>", " ", unescaped)
+            clean = " ".join(no_tags.split())
+            return clean
+
+        def format_about(description: str, attendees) -> str:
+            # 1) Materials
+            materials = []
+            for att in attendees:
+                for u in getattr(att, 'materials', None) or []:
+                    if u not in materials:
+                        materials.append(u)
+            if materials:
+                return " — About: Materials: " + " • ".join(materials[:2])
+
+            # 2) Affinity last note / recent context
+            base = strip_html(description)
+            if not base:
+                for att in attendees:
+                    if getattr(att, 'last_note_summary', None):
+                        base = strip_html(att.last_note_summary)
+                        if base:
+                            break
+                    if getattr(att, 'recent_emails', None):
+                        base = strip_html(att.recent_emails[0])
+                        if base:
+                            break
+            # 3) Company website (fallback)
+            if not base:
+                for att in attendees:
+                    if getattr(att, 'website_url', None):
+                        base = f"Company site: {att.website_url}"
+                        break
+            if not base:
+                return ""
+            clean = base
+            if not clean:
+                return ""
+            snippet = (clean[:120] + "…") if len(clean) > 120 else clean
+            return f" — About: {snippet}"
+
+        date_str = events[0].start_time.strftime('%B %d, %Y')
+        header = f"Morning Brief - {date_str}\n\n"
+        header += f"You have {len(events)} meetings scheduled today:\n\n"
+
+        lines = []
         for event in events:
-            brief += f"📅 {event.title}\n"
-            brief += f"   Time: {event.start_time.strftime('%I:%M %p')} - {event.end_time.strftime('%I:%M %p')}\n"
-            
-            if event.location:
-                brief += f"   Location: {event.location}\n"
-            
-            brief += f"   Attendees: {', '.join([a.name for a in event.attendees])}\n"
-            
-            # Add basic attendee info
-            for attendee in event.attendees:
-                if attendee.company:
-                    brief += f"     - {attendee.name} ({attendee.company})\n"
-                else:
-                    brief += f"     - {attendee.name}\n"
-            
-            brief += "\n"
-        
-        return brief
+            time_range = format_time_range(event.start_time, event.end_time)
+            attendees_str = format_attendees(event.attendees)
+            about_str = format_about(event.description, event.attendees)
+            # Single-line, no location
+            line = f"📅 {time_range} {event.title}{attendees_str}{about_str}"
+            lines.append(line)
+
+        return header + "\n".join(lines) + "\n"
     
     def generate_attendee_summary(self, attendee: AttendeeInfo) -> str:
         """Generate a summary for a specific attendee."""
