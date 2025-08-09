@@ -3,6 +3,7 @@ import base64
 from typing import List, Optional, Dict, Any
 from app.core.config import settings
 from app.schemas.brief import AttendeeInfo
+from app.core.utils.retry import async_retry, should_retry_http_error
 
 
 class AffinityClient:
@@ -27,6 +28,7 @@ class AffinityClient:
             "Content-Type": "application/json",
         }
     
+    @async_retry((httpx.HTTPError, Exception), tries=3, base_delay=0.5, max_delay=2.0, should_retry=should_retry_http_error)
     async def find_person_by_email(self, email: str) -> Optional[Dict[str, Any]]:
         """Find a person in Affinity by email address."""
         async with httpx.AsyncClient() as client:
@@ -54,6 +56,7 @@ class AffinityClient:
                 print(f"Error finding person by email: {e}")
                 return None
     
+    @async_retry((httpx.HTTPError, Exception), tries=3, base_delay=0.5, max_delay=2.0, should_retry=should_retry_http_error)
     async def get_person_details(self, person_id: int) -> Optional[Dict[str, Any]]:
         """Get detailed information about a person."""
         async with httpx.AsyncClient() as client:
@@ -73,6 +76,7 @@ class AffinityClient:
                 print(f"Error getting person details: {e}")
                 return None
 
+    @async_retry((httpx.HTTPError, Exception), tries=3, base_delay=0.5, max_delay=2.0, should_retry=should_retry_http_error)
     async def get_person_list_entries(self, person_id: int, limit: int = 50) -> List[Dict[str, Any]]:
         """Get list entries (rows) for a person; used to inspect enriched field values like LinkedIn URL."""
         async with httpx.AsyncClient() as client:
@@ -92,6 +96,7 @@ class AffinityClient:
                 print(f"Error getting person list entries: {e}")
                 return []
 
+    @async_retry((httpx.HTTPError, Exception), tries=3, base_delay=0.5, max_delay=2.0, should_retry=should_retry_http_error)
     async def get_person_fields(self) -> Dict[str, Any]:
         """Fetch and cache person field metadata (v2)."""
         if self._person_fields_cache is not None:
@@ -159,6 +164,7 @@ class AffinityClient:
                                 stack.append(v)
         return None
 
+    @async_retry((httpx.HTTPError, Exception), tries=2, base_delay=0.5, max_delay=1.5, should_retry=should_retry_http_error)
     async def get_person_v1(self, person_id: int) -> Optional[Dict[str, Any]]:
         """Fallback to Affinity v1 person endpoint to fetch social profiles if available."""
         async with httpx.AsyncClient() as client:

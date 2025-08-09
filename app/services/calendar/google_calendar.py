@@ -6,6 +6,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from app.core.utils.retry import should_retry_http_error
 from app.core.config import settings
 from app.schemas.brief import MeetingEvent, AttendeeInfo
 from dateutil import parser as dateutil_parser

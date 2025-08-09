@@ -98,7 +98,13 @@ brief = await brief_service.generate_daily_brief()
 
 ### Automated Scheduling
 
-The system automatically generates and sends briefs at the configured delivery time using Celery tasks.
+- Celery Beat triggers `generate_and_send_morning_brief` at `DEFAULT_DELIVERY_TIME` (local timezone).
+- Run locally:
+  ```bash
+  redis-server &
+  celery -A app.core.celery_app.celery_app worker -l info &
+  celery -A app.core.celery_app.celery_app beat -l info
+  ```
 
 ### API Endpoints
 
