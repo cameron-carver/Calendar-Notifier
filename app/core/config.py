@@ -41,8 +41,9 @@ class Settings(BaseSettings):
     # Limit to upcoming window (hours) when generating for today; 0 disables
     time_window_hours: int = 0
     # Theme colors for email (hex or CSS color names)
-    theme_accent: str = "#6366f1"
-    theme_accent2: str = "#a855f7"
+    # Brand/Theme (defaults aligned to Blackhorn-like palette)
+    theme_accent: str = "#D6A35C"    # gold
+    theme_accent2: str = "#B07C3A"   # bronze
 
     # Content intelligence
     enable_talking_points: bool = True

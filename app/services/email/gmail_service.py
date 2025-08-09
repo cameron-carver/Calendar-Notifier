@@ -254,10 +254,10 @@ class GmailService:
                     --bg: #ffffff;
                     --text: #1f2937;
                     --muted: #6b7280;
-                    --line: #eef2f7;
-                    --accent: {html_lib.escape(settings.theme_accent)}; /* accent */
-                    --accent2: {html_lib.escape(settings.theme_accent2)}; /* secondary */
-                    --chip-bg: #eef2ff; /* indigo-50 */
+                    --line: #e9ecef;
+                    --accent: {html_lib.escape(settings.theme_accent)}; /* gold */
+                    --accent2: {html_lib.escape(settings.theme_accent2)}; /* bronze */
+                    --chip-bg: #fff7e6; /* soft gold tint */
                 }}
                 body {{
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -329,11 +329,11 @@ class GmailService:
                     width: auto;
                 }}
                 .time {{
-                    color: var(--accent);
+                    color: #6b4f1d;
                     font-weight: 600;
                     font-size: 12px;
                     background: var(--chip-bg);
-                    border: 1px solid rgba(99,102,241,0.22);
+                    border: 1px solid rgba(214,163,92,0.35);
                     padding: 4px 8px;
                     border-radius: 999px;
                 }}
@@ -349,19 +349,19 @@ class GmailService:
                     border: 1px solid transparent;
                 }}
                 .chip-small {{
-                    background: #ecfdf5;
-                    color: #065f46;
-                    border-color: rgba(16,185,129,0.25);
+                    background: #f5f3ff;
+                    color: #4c1d95;
+                    border-color: rgba(79,70,229,0.25);
                 }}
                 .chip-medium {{
-                    background: #fffbeb;
-                    color: #92400e;
-                    border-color: rgba(245,158,11,0.25);
+                    background: #fff7e6;
+                    color: #6b4f1d;
+                    border-color: rgba(214,163,92,0.35);
                 }}
                 .chip-large {{
-                    background: #fef2f2;
-                    color: #991b1b;
-                    border-color: rgba(239,68,68,0.25);
+                    background: #fde2e2;
+                    color: #7f1d1d;
+                    border-color: rgba(185,28,28,0.25);
                 }}
                 .attendees {{
                     color: #374151;
@@ -407,9 +407,9 @@ class GmailService:
         <body>
             <div class="header">
                 <div style="background: linear-gradient(90deg, var(--accent), var(--accent2)); color: white; padding: 22px; border-radius: 14px; display: flex; align-items: center; gap: 14px;">
-                    <div style="font-size: 28px;">🌅</div>
+                    <div style="font-size: 28px;">🦬</div>
                     <div>
-                        <div style="font-size: 24px; font-weight: 800; letter-spacing: 0.2px;">Morning Brief</div>
+                        <div style="font-size: 24px; font-weight: 800; letter-spacing: 0.2px;">Blackhorn Morning Brief</div>
                         <div style="opacity: 0.95; font-size: 13px;">Your daily meeting preparation summary</div>
                     </div>
                 </div>
