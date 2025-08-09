@@ -1,4 +1,5 @@
 from celery import shared_task
+from celery.schedules import crontab
 from datetime import datetime, date, timedelta
 from sqlalchemy.orm import Session
 from app.core.database import SessionLocal

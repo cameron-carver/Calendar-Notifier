@@ -20,3 +20,17 @@ celery_app.conf.update(
     task_time_limit=30 * 60,  # 30 minutes
     task_soft_time_limit=25 * 60,  # 25 minutes
 ) 
+
+# Optional Celery Beat schedule (daily brief)
+delivery_time = getattr(settings, 'default_delivery_time', '08:00')
+hour, minute = map(int, delivery_time.split(':'))
+celery_app.conf.beat_schedule = {
+    'daily-morning-brief': {
+        'task': 'app.tasks.brief_tasks.generate_and_send_morning_brief',
+        'schedule': {
+            'type': 'crontab',
+            'hour': hour,
+            'minute': minute,
+        },
+    }
+}

@@ -132,6 +132,20 @@ class BriefService:
         except Exception as e:
             print(f"Error generating and sending brief: {e}")
             return False
+
+    async def generate_and_send_if_upcoming(self, user_email: str, window_hours: int = 2) -> bool:
+        """Send a brief only if there is an external meeting within the next window hours."""
+        try:
+            from datetime import timedelta
+            target = date.today()
+            brief = await self.generate_daily_brief(target)
+            has_upcoming = any(True for e in brief.events_summary)
+            if not has_upcoming:
+                return False
+            return await self.send_morning_brief(user_email, brief.content)
+        except Exception as e:
+            print(f"Error in generate_and_send_if_upcoming: {e}")
+            return False
     
     def save_brief_to_database(self, brief_response: BriefResponse, db: Session) -> Brief:
         """Save the brief to the database."""
