@@ -140,39 +140,49 @@ class SummarizationService:
             clean = " ".join(no_tags.split())
             return clean
 
-        def format_about(description: str, attendees) -> str:
-            # 1) Materials
-            materials = []
+        def format_about(_description: str, attendees) -> str:
+            # 1) Company website from attendee (preferred)
+            website = None
             for att in attendees:
-                for u in getattr(att, 'materials', None) or []:
-                    if u not in materials:
-                        materials.append(u)
-            if materials:
-                return " — About: Materials: " + " • ".join(materials[:2])
+                website = getattr(att, 'website_url', None)
+                if website:
+                    break
+            if not website:
+                # Derive from email domain if no website_url provided
+                for att in attendees:
+                    email = getattr(att, 'email', '') or ''
+                    if '@' in email:
+                        domain = email.split('@', 1)[1]
+                        website = f"https://{domain}"
+                        break
+            if website:
+                return f" — About: Company site: {website}"
 
-            # 2) Affinity last note / recent context
-            base = strip_html(description)
+            # 2) Affinity data: last note, recent emails, materials
+            base = None
+            for att in attendees:
+                if getattr(att, 'last_note_summary', None):
+                    base = strip_html(att.last_note_summary)
+                    if base:
+                        break
             if not base:
                 for att in attendees:
-                    if getattr(att, 'last_note_summary', None):
-                        base = strip_html(att.last_note_summary)
-                        if base:
-                            break
                     if getattr(att, 'recent_emails', None):
                         base = strip_html(att.recent_emails[0])
                         if base:
                             break
-            # 3) Company website (fallback)
             if not base:
+                materials = []
                 for att in attendees:
-                    if getattr(att, 'website_url', None):
-                        base = f"Company site: {att.website_url}"
-                        break
+                    for u in getattr(att, 'materials', None) or []:
+                        if u not in materials:
+                            materials.append(u)
+                if materials:
+                    return " — About: Materials: " + " • ".join(materials[:2])
+
             if not base:
                 return ""
             clean = base
-            if not clean:
-                return ""
             snippet = (clean[:120] + "…") if len(clean) > 120 else clean
             return f" — About: {snippet}"
 
