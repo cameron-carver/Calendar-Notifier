@@ -37,7 +37,7 @@ class Settings(BaseSettings):
 
     # Personalization
     # Comma-separated list of internal domains (e.g., blackhornvc.com,company.local)
-    internal_domains: str | None = None
+    internal_domains: Optional[str] = None
     # Limit to upcoming window (hours) when generating for today; 0 disables
     time_window_hours: int = 0
     # Theme colors for email (hex or CSS color names)

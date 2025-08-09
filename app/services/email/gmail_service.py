@@ -13,6 +13,7 @@ from typing import Optional, List
 from app.core.config import settings
 from app.schemas.brief import MeetingEvent, AttendeeInfo
 from dateutil import parser as dateutil_parser
+import urllib.parse as urlparse
 
 
 class GmailService:
@@ -120,16 +121,19 @@ class GmailService:
                 time_range = f"{ev.start_time.strftime('%I:%M %p').lstrip('0')}–{ev.end_time.strftime('%I:%M %p').lstrip('0')}"
                 attendees_html_parts = []
                 for att in ev.attendees[:8]:
+                    # Display name: first name (normalized)
                     name = normalize_name(att.name or att.email.split('@')[0])
                     linkedin = getattr(att, 'linkedin_url', None)
-                    # Fallback: Google search link to LinkedIn profile if none provided
+                    # Fallback: Google search link to LinkedIn profile using full name + company
                     if not linkedin:
-                        q = name
+                        full_name = (att.name or att.email.split('@')[0]).strip()
                         company = getattr(att, 'company', None)
+                        parts = [full_name]
                         if company:
-                            q += f" {company}"
-                        q += " linkedin"
-                        linkedin = f"https://www.google.com/search?q={html_lib.escape(q)}"
+                            parts.append(company)
+                        parts.append('linkedin')
+                        q = ' '.join(parts)
+                        linkedin = f"https://www.google.com/search?q={urlparse.quote_plus(q)}"
                     attendees_html_parts.append(
                         '<a href="' + linkedin + '" target="_blank" rel="noopener noreferrer">' + html_lib.escape(name) + '<span class="li-icon">↗</span></a>'
                     )

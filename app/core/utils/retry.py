@@ -1,6 +1,6 @@
 import asyncio
 import random
-from typing import Callable, Type, Tuple, Any
+from typing import Callable, Type, Tuple, Any, Optional
 
 
 def should_retry_http_error(exc: Exception) -> bool:
@@ -17,7 +17,7 @@ def async_retry(
     tries: int = 3,
     base_delay: float = 0.5,
     max_delay: float = 5.0,
-    should_retry: Callable[[BaseException], bool] | None = None,
+    should_retry: Optional[Callable[[BaseException], bool]] = None,
 ):
     def decorator(func: Callable[..., Any]):
         async def wrapper(*args, **kwargs):
@@ -41,7 +41,7 @@ def retry(
     tries: int = 3,
     base_delay: float = 0.5,
     max_delay: float = 5.0,
-    should_retry: Callable[[BaseException], bool] | None = None,
+    should_retry: Optional[Callable[[BaseException], bool]] = None,
 ):
     def decorator(func: Callable[..., Any]):
         def wrapper(*args, **kwargs):

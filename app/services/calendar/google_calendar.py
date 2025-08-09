@@ -8,6 +8,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from app.core.utils.retry import should_retry_http_error
 from app.core.utils.cache import RedisCache, make_key
+import time as pytime
 from app.core.config import settings
 from app.schemas.brief import MeetingEvent, AttendeeInfo
 from dateutil import parser as dateutil_parser
@@ -90,16 +91,11 @@ class GoogleCalendarService:
                 cache_key = make_key("gcal", calendar_id or "primary", time_min, time_max)
                 cached_items = None
                 try:
-                    cached_items = RedisCache.client().get(cache_key)  # type: ignore
+                    cached_items = RedisCache.get_json_sync(cache_key)
                 except Exception:
                     cached_items = None
                 if cached_items:
-                    import json
-                    try:
-                        items = json.loads(cached_items)
-                        events_result = {"items": items}
-                    except Exception:
-                        events_result = {"items": []}
+                    events_result = {"items": cached_items}
                 else:
                     # Call the Calendar API for each calendar with simple retry
                     attempt = 0
@@ -115,8 +111,7 @@ class GoogleCalendarService:
                             # Cache items for short TTL to avoid repeated calls in same run
                             items = events_result.get('items', [])
                             try:
-                                import json
-                                RedisCache.client().set(cache_key, json.dumps(items), ex=600)  # 10 min
+                                RedisCache.set_json_sync(cache_key, items, ttl_seconds=600)
                             except Exception:
                                 pass
                             break
@@ -124,8 +119,7 @@ class GoogleCalendarService:
                             attempt += 1
                             if attempt >= 3 or not should_retry_http_error(error):
                                 raise
-                            import time
-                            time.sleep(0.5 * attempt)
+                            pytime.sleep(0.5 * attempt)
                 
                 events = events_result.get('items', [])
                 for event in events:
