@@ -4,6 +4,7 @@ from typing import List, Optional, Dict, Any
 from app.core.config import settings
 from app.schemas.brief import AttendeeInfo
 from app.core.utils.retry import async_retry, should_retry_http_error
+from app.core.utils.cache import RedisCache, make_key
 
 
 class AffinityClient:
@@ -31,6 +32,10 @@ class AffinityClient:
     @async_retry((httpx.HTTPError, Exception), tries=3, base_delay=0.5, max_delay=2.0, should_retry=should_retry_http_error)
     async def find_person_by_email(self, email: str) -> Optional[Dict[str, Any]]:
         """Find a person in Affinity by email address."""
+        cache_key = make_key("aff", "person", email.lower())
+        cached = await RedisCache.get_json(cache_key)
+        if cached:
+            return cached
         async with httpx.AsyncClient() as client:
             try:
                 # Search for persons with the given email
@@ -46,7 +51,9 @@ class AffinityClient:
                 persons = data.get("data", [])
                 
                 if persons:
-                    return persons[0]  # Return the first match
+                    person = persons[0]
+                    await RedisCache.set_json(cache_key, person, ttl_seconds=60 * 60 * 24)
+                    return person  # Return the first match
                 return None
                 
             except httpx.HTTPStatusError as e:
@@ -59,6 +66,10 @@ class AffinityClient:
     @async_retry((httpx.HTTPError, Exception), tries=3, base_delay=0.5, max_delay=2.0, should_retry=should_retry_http_error)
     async def get_person_details(self, person_id: int) -> Optional[Dict[str, Any]]:
         """Get detailed information about a person."""
+        cache_key = make_key("aff", "person_details", str(person_id))
+        cached = await RedisCache.get_json(cache_key)
+        if cached:
+            return cached
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.get(
@@ -67,7 +78,9 @@ class AffinityClient:
                 )
                 response.raise_for_status()
                 
-                return response.json()
+                payload = response.json()
+                await RedisCache.set_json(cache_key, payload, ttl_seconds=60 * 60 * 24)
+                return payload
                 
             except httpx.HTTPStatusError as e:
                 print(f"HTTP error occurred: {e}")
@@ -79,6 +92,10 @@ class AffinityClient:
     @async_retry((httpx.HTTPError, Exception), tries=3, base_delay=0.5, max_delay=2.0, should_retry=should_retry_http_error)
     async def get_person_list_entries(self, person_id: int, limit: int = 50) -> List[Dict[str, Any]]:
         """Get list entries (rows) for a person; used to inspect enriched field values like LinkedIn URL."""
+        cache_key = make_key("aff", "person_entries", str(person_id))
+        cached = await RedisCache.get_json(cache_key)
+        if cached:
+            return cached
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.get(
@@ -88,7 +105,9 @@ class AffinityClient:
                 )
                 response.raise_for_status()
                 data = response.json() or {}
-                return data.get("data", [])
+                entries = data.get("data", [])
+                await RedisCache.set_json(cache_key, entries, ttl_seconds=60 * 60 * 24)
+                return entries
             except httpx.HTTPStatusError as e:
                 print(f"HTTP error occurred: {e}")
                 return []
@@ -101,6 +120,11 @@ class AffinityClient:
         """Fetch and cache person field metadata (v2)."""
         if self._person_fields_cache is not None:
             return self._person_fields_cache
+        cache_key = make_key("aff", "person_fields")
+        cached = await RedisCache.get_json(cache_key)
+        if cached:
+            self._person_fields_cache = cached
+            return cached
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.get(
@@ -109,6 +133,7 @@ class AffinityClient:
                 )
                 response.raise_for_status()
                 self._person_fields_cache = response.json() or {}
+                await RedisCache.set_json(cache_key, self._person_fields_cache, ttl_seconds=60 * 60 * 24)
             except Exception as e:
                 print(f"Error getting person fields: {e}")
                 self._person_fields_cache = {}
@@ -167,13 +192,19 @@ class AffinityClient:
     @async_retry((httpx.HTTPError, Exception), tries=2, base_delay=0.5, max_delay=1.5, should_retry=should_retry_http_error)
     async def get_person_v1(self, person_id: int) -> Optional[Dict[str, Any]]:
         """Fallback to Affinity v1 person endpoint to fetch social profiles if available."""
+        cache_key = make_key("aff", "v1_person", str(person_id))
+        cached = await RedisCache.get_json(cache_key)
+        if cached:
+            return cached
         async with httpx.AsyncClient() as client:
             try:
                 resp = await client.get(
                     f"{self.V1_BASE_URL}/v1/persons/{person_id}", headers=self._v1_basic_auth
                 )
                 resp.raise_for_status()
-                return resp.json()
+                payload = resp.json()
+                await RedisCache.set_json(cache_key, payload, ttl_seconds=60 * 60 * 24)
+                return payload
             except Exception as e:
                 print(f"Error getting v1 person {person_id}: {e}")
                 return None
