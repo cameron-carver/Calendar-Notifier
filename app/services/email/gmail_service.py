@@ -107,6 +107,13 @@ class GmailService:
         if len(non_empty) > 1:
             subtitle = html_lib.escape(non_empty[1])
 
+        # Try to extract a date string from the header line (e.g., "Morning Brief - August 11, 2025")
+        date_str = ""
+        if non_empty and " - " in non_empty[0]:
+            parts = non_empty[0].split(" - ", 1)
+            if len(parts) == 2:
+                date_str = html_lib.escape(parts[1])
+
         # If events are available, build items from structured data to include LinkedIn links
         if events:
             for ev in events:
@@ -213,19 +220,22 @@ class GmailService:
                 links = []
                 for u in it['materials']:
                     esc = html_lib.escape(u)
-                    links.append(f'<a href="{esc}" target="_blank" rel="noopener noreferrer">link</a>')
-                materials_html = f"<div class=\"materials\">Materials: {' • '.join(links)}</div>"
+                    links.append(f'<a href="{esc}" target="_blank" rel="noopener noreferrer">🔗</a>')
+                materials_html = f"<div class=\"materials\"><span class=\"label\">Materials:</span> {' '.join(links)}</div>"
 
             items_html.append(
                 f"""
                 <li class="item">
-                    <span class="time">{it['time']}</span>
-                    <span class="dot">•</span>
-                    <span class="title">{it['title']}</span> {it.get('size_chip','')}
-                    {attendees_html}
-                    {about_html}
-                    {context_html}
-                    {materials_html}
+                    <div class="row">
+                        <div class="col time-col"><span class="time">{it['time']}</span></div>
+                        <div class="col content-col">
+                            <div class="title-line"><span class="title">{it['title']}</span> {it.get('size_chip','')}</div>
+                            {attendees_html}
+                            {about_html}
+                            {context_html}
+                            {materials_html}
+                        </div>
+                    </div>
                 </li>
                 """
             )
@@ -274,6 +284,20 @@ class GmailService:
                     border-radius: 999px;
                     margin: 8px 0 14px 0;
                 }}
+                .summary {{
+                    display: flex;
+                    gap: 10px;
+                    align-items: center;
+                    margin-top: 10px;
+                }}
+                .chip-info {{
+                    background: #f3f4f6;
+                    color: #374151;
+                    font-size: 12px;
+                    padding: 4px 10px;
+                    border-radius: 999px;
+                    border: 1px solid #e5e7eb;
+                }}
                 ul.list {{
                     list-style: none;
                     padding: 0;
@@ -286,6 +310,20 @@ class GmailService:
                 .item:first-child {{
                     border-top: 0;
                 }}
+                .row {{
+                    display: table;
+                    width: 100%;
+                }}
+                .col {{
+                    display: table-cell;
+                    vertical-align: top;
+                }}
+                .time-col {{
+                    width: 140px;
+                }}
+                .content-col {{
+                    width: auto;
+                }}
                 .time {{
                     color: var(--accent);
                     font-weight: 600;
@@ -294,10 +332,6 @@ class GmailService:
                     border: 1px solid rgba(99,102,241,0.22);
                     padding: 4px 8px;
                     border-radius: 999px;
-                }}
-                .dot {{
-                    color: #c7cbd1;
-                    margin: 0 8px;
                 }}
                 .title {{
                     font-weight: 700;
@@ -355,6 +389,14 @@ class GmailService:
                 .materials a {{
                     color: var(--accent);
                     text-decoration: none;
+                }}
+                .materials .label {{
+                    margin-right: 6px;
+                }}
+                @media (max-width: 480px) {{
+                    .time-col {{ width: 110px; }}
+                    .title {{ font-size: 13.5px; }}
+                    .attendees {{ font-size: 12.5px; }}
                 }}
             </style>
         </head>
