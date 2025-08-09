@@ -161,6 +161,15 @@ black .
 flake8 .
 ```
 
+### Pre-commit hooks
+
+```bash
+pip install pre-commit
+pre-commit install
+# Run on all files once
+pre-commit run --all-files
+```
+
 ## License
 
 MIT License 
