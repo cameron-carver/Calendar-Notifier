@@ -138,6 +138,22 @@ app/
 pytest
 ```
 
+## Security
+
+- Tokens/credentials are ignored by Git; never commit them.
+- OAuth tokens are stored locally in `google_*_credentials.json` (ignored). Rotate in Google Cloud as needed.
+- Run the token refresh helper to validate scopes and refresh tokens:
+  ```bash
+  python tools/token_refresh.py
+  ```
+
+### Secrets checklist
+
+- Ensure `.env` is not committed; use `.env.example` as template.
+- Verify GitHub push protection is enabled (it will block secrets).
+- Store API keys in a vault (1Password, Doppler, SSM) for deployment.
+- Rotate Google OAuth tokens periodically; re-run `setup_oauth.py` if scopes change.
+
 ### Code Formatting
 
 ```bash
