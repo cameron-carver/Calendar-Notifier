@@ -19,11 +19,11 @@ class GoogleCalendarService:
     
     SCOPES = ['https://www.googleapis.com/auth/calendar']
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.service = None
         self._authenticate()
     
-    def _authenticate(self):
+    def _authenticate(self) -> None:
         """Authenticate with Google Calendar API."""
         creds = None
         

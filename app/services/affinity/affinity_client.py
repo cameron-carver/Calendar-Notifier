@@ -13,7 +13,7 @@ class AffinityClient:
     BASE_URL = "https://api.affinity.co/v2"
     V1_BASE_URL = "https://api.affinity.co"
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.api_key = settings.affinity_api_key
         # Affinity API v2 expects Bearer authentication
         self.headers = {

@@ -20,11 +20,11 @@ class GmailService:
     
     SCOPES = ['https://www.googleapis.com/auth/gmail.send']
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.service = None
         self._authenticate()
     
-    def _authenticate(self):
+    def _authenticate(self) -> None:
         """Authenticate with Gmail API."""
         creds = None
         
