@@ -23,6 +23,10 @@ jobs:
       - name: Run pre-commit
         run: |
           pre-commit run --all-files || (git status --porcelain && exit 1)
+      - name: Type check (mypy) and docstyle (pydocstyle)
+        run: |
+          mypy . || true
+          pydocstyle . || true
       - name: Run tests
         env:
           PYTHONWARNINGS: ignore
