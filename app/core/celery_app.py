@@ -1,4 +1,5 @@
 from celery import Celery
+from celery.schedules import crontab
 from app.core.config import settings
 
 # Create Celery instance
@@ -27,10 +28,10 @@ hour, minute = map(int, delivery_time.split(':'))
 celery_app.conf.beat_schedule = {
     'daily-morning-brief': {
         'task': 'app.tasks.brief_tasks.generate_and_send_morning_brief',
-        'schedule': {
-            'type': 'crontab',
-            'hour': hour,
-            'minute': minute,
-        },
-    }
+        'schedule': crontab(hour=hour, minute=minute),
+    },
+    'weekly-token-refresh': {
+        'task': 'app.tasks.brief_tasks.refresh_tokens',
+        'schedule': crontab(hour=2, minute=0, day_of_week='sun'),
+    },
 }

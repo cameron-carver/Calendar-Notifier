@@ -129,3 +129,16 @@ def cleanup_old_briefs(days_to_keep: int = 30):
         return 0
     finally:
         db.close() 
+
+
+@shared_task
+def refresh_tokens() -> bool:
+    """Weekly token refresh task to validate scopes and refresh Google tokens."""
+    try:
+        from tools.token_refresh import main as token_main
+        exit_code = token_main()
+        print(f"Token refresh completed with code {exit_code}")
+        return exit_code == 0
+    except Exception as e:
+        print(f"Error in token refresh task: {e}")
+        return False
