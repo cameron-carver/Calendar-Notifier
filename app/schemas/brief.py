@@ -18,6 +18,9 @@ class AttendeeInfo(BaseModel):
     company_domain: Optional[str] = None
     website_url: Optional[str] = None
     news_articles: Optional[List[Dict[str, Any]]] = None
+    # Relationship history
+    last_meeting_date: Optional[datetime] = None
+    meetings_past_n_days: Optional[int] = None
 
 
 class MeetingEvent(BaseModel):
@@ -29,6 +32,10 @@ class MeetingEvent(BaseModel):
     attendees: List[AttendeeInfo]
     description: Optional[str] = None
     location: Optional[str] = None
+    # Quick access
+    meeting_url: Optional[str] = None
+    calendar_url: Optional[str] = None
+    duration_minutes: Optional[int] = None
 
 
 class BriefRequest(BaseModel):

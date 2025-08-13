@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     # Optional settings
     max_news_articles_per_person: int = 3
     brief_summary_length: int = 500
+    # Lookback window for prior meeting history (days)
+    history_lookback_days: int = 120
 
     # Filters
     filter_require_non_owner_attendee: bool = True

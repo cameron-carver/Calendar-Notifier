@@ -117,9 +117,37 @@ class GmailService:
 
         # If events are available, build items from structured data to include LinkedIn links
         if events:
+            # Build top summary chips
+            try:
+                total_meetings = len(events)
+                first_start = min(ev.start_time for ev in events)
+                last_end = max(ev.end_time for ev in events)
+                unique_people = set()
+                unique_companies = set()
+                for ev in events:
+                    for att in ev.attendees:
+                        if getattr(att, 'email', None):
+                            unique_people.add(att.email.lower())
+                        comp = getattr(att, 'company', None)
+                        if comp:
+                            unique_companies.add(comp.strip().lower())
+                def fmt_time(dt):
+                    return f"{dt.strftime('%I:%M %p').lstrip('0')}"
+                summary_html = (
+                    f"<div class=\"summary\">"
+                    f"<span class=\"chip-info\">{total_meetings} meeting{'s' if total_meetings != 1 else ''}</span>"
+                    f"<span class=\"chip-info\">First at {fmt_time(first_start)}</span>"
+                    f"<span class=\"chip-info\">Window {fmt_time(first_start)}–{fmt_time(last_end)}</span>"
+                    f"<span class=\"chip-info\">People {len(unique_people)}</span>"
+                    f"<span class=\"chip-info\">Companies {len(unique_companies)}</span>"
+                    f"</div>"
+                )
+            except Exception:
+                summary_html = ""
             for ev in events:
                 time_range = f"{ev.start_time.strftime('%I:%M %p').lstrip('0')}–{ev.end_time.strftime('%I:%M %p').lstrip('0')}"
                 attendees_html_parts = []
+                people_details = []
                 for att in ev.attendees[:8]:
                     # Display name: first name (normalized)
                     name = normalize_name(att.name or att.email.split('@')[0])
@@ -137,6 +165,17 @@ class GmailService:
                     attendees_html_parts.append(
                         '<a href="' + linkedin + '" target="_blank" rel="noopener noreferrer">' + html_lib.escape(name) + '<span class="li-icon">↗</span></a>'
                     )
+                    # People meta line (compact)
+                    meta_bits = []
+                    title = getattr(att, 'title', None)
+                    company = getattr(att, 'company', None)
+                    if title:
+                        meta_bits.append(html_lib.escape(title))
+                    if company:
+                        meta_bits.append(html_lib.escape(company))
+                    meta = " , ".join(meta_bits)
+                    if meta:
+                        people_details.append(f"<li><span class=\"name\">{html_lib.escape(name)}</span> <span class=\"meta\">— {meta}</span></li>")
                 attendees_joined = ", ".join(attendees_html_parts)
                 about_text = ""
                 # Prefer last note summary, else recent email/context, else description
@@ -178,6 +217,35 @@ class GmailService:
                             materials_urls.append(u)
                 materials_urls = materials_urls[:3]
 
+                # History: last met date and counts (aggregate from attendees)
+                history_text = ""
+                last_dates = []
+                total_counts = []
+                for att in ev.attendees:
+                    if getattr(att, 'last_meeting_date', None):
+                        try:
+                            dt = att.last_meeting_date
+                            # Pydantic may pass as str, handle both
+                            from dateutil import parser as _p
+                            if isinstance(dt, str):
+                                dt = _p.isoparse(dt)
+                            last_dates.append(dt)
+                        except Exception:
+                            pass
+                    if getattr(att, 'meetings_past_n_days', None):
+                        total_counts.append(getattr(att, 'meetings_past_n_days'))
+                if last_dates or total_counts:
+                    last_dt = max(last_dates) if last_dates else None
+                    last_txt = last_dt.strftime('%b %d, %Y') if last_dt else None
+                    count_txt = max(total_counts) if total_counts else None
+                    parts_ht = []
+                    if last_txt:
+                        parts_ht.append(f"last met on {last_txt}")
+                    if count_txt:
+                        parts_ht.append(f"{count_txt}x in last {getattr(settings, 'history_lookback_days', 120)} days")
+                    if parts_ht:
+                        history_text = "History: " + ", ".join(parts_ht)
+
                 items.append({
                     "time": html_lib.escape(time_range),
                     "title": html_lib.escape(ev.title or "Untitled Meeting"),
@@ -186,6 +254,8 @@ class GmailService:
                     "context": html_lib.escape(context_text) if context_text else "",
                     "size_chip": chip_html,
                     "materials": materials_urls,
+                    "people_details": people_details,
+                    "history": html_lib.escape(history_text) if history_text else "",
                 })
         else:
             # Regex to parse meeting one-liners produced by fallback formatter
@@ -218,6 +288,7 @@ class GmailService:
             attendees_html = f"<span class=\"attendees\">— {it['attendees_html']}</span>" if it.get("attendees_html") else ""
             about_html = f"<div class=\"about\">About: {it['about']}</div>" if it["about"] else ""
             context_html = f"<div class=\"about\">{it['context']}</div>" if it.get("context") else ""
+            history_html = f"<div class=\"about\">{it['history']}</div>" if it.get("history") else ""
             # Materials row (compact) if present
             materials_html = ""
             if it.get('materials'):
@@ -226,6 +297,9 @@ class GmailService:
                     esc = html_lib.escape(u)
                     links.append(f'<a href="{esc}" target="_blank" rel="noopener noreferrer">🔗</a>')
                 materials_html = f"<div class=\"materials\"><span class=\"label\">Materials:</span> {' '.join(links)}</div>"
+            people_html = ""
+            if it.get('people_details'):
+                people_html = "<ul class=\"people\">" + "".join(it['people_details']) + "</ul>"
 
             items_html.append(
                 f"""
@@ -235,8 +309,10 @@ class GmailService:
                         <div class="col content-col">
                             <div class="title-line"><span class="title">{it['title']}</span> {it.get('size_chip','')}</div>
                             {attendees_html}
+                            {people_html}
                             {about_html}
                             {context_html}
+                            {history_html}
                             {materials_html}
                         </div>
                     </div>
@@ -378,6 +454,19 @@ class GmailService:
                     font-size: 12.5px;
                     margin-top: 6px;
                 }}
+                .people {{
+                    margin: 6px 0 0 0;
+                    padding-left: 18px;
+                    color: #4b5563;
+                    font-size: 12.5px;
+                }}
+                .people .name {{
+                    font-weight: 600;
+                    color: #374151;
+                }}
+                .people .meta {{
+                    color: #6b7280;
+                }}
                 .footer {{
                     margin-top: 22px;
                     padding-top: 12px;
@@ -413,6 +502,7 @@ class GmailService:
                         <div style="opacity: 0.95; font-size: 13px;">Your daily meeting preparation summary</div>
                     </div>
                 </div>
+                {summary_html if events else ''}
             </div>
             <ul class="list">
                 {''.join(items_html)}

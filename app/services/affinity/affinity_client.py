@@ -266,11 +266,15 @@ class AffinityClient:
                     company_name = None
                     company_domain = None
                     website_url = None
+                    job_title = None
                     if "organizations" in person_details and person_details["organizations"]:
                         org = person_details["organizations"][0]
                         company_name = org.get("name")
                         company_domain = (org.get("domain") or org.get("website_domain") or None)
                         website_url = org.get("website_url") or (f"https://{company_domain}" if company_domain else None)
+                        job_title = org.get("title") or job_title
+                    # Top-level title if present
+                    job_title = job_title or person_details.get("title")
                     
                     # Extract LinkedIn URL
                     linkedin_url = None
@@ -325,6 +329,8 @@ class AffinityClient:
                     attendee.company_domain = company_domain
                     attendee.website_url = website_url
                     attendee.linkedin_url = linkedin_url
+                    if job_title:
+                        attendee.title = job_title
                     attendee.recent_emails = recent_context
                     attendee.last_note_summary = last_note_summary
                     attendee.last_note_date = last_note_date

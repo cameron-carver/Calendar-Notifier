@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.schemas.brief import MeetingEvent, AttendeeInfo
 from dateutil import parser as dateutil_parser
 import pytz
+import re
 
 
 class GoogleCalendarService:
@@ -174,6 +175,11 @@ class GoogleCalendarService:
                     if settings.filter_external_only and len(external_attendees) == 0:
                         continue
 
+                    # Quick links and duration
+                    meeting_url = self._extract_meeting_url(event)
+                    calendar_url = event.get('htmlLink')
+                    duration_minutes = int((end_time - start_time).total_seconds() // 60)
+
                     meeting_events.append(MeetingEvent(
                         event_id=event['id'],
                         title=event.get('summary', 'Untitled Meeting'),
@@ -181,7 +187,10 @@ class GoogleCalendarService:
                         end_time=end_time,
                         attendees=external_attendees,
                         description=event.get('description'),
-                        location=event.get('location')
+                        location=event.get('location'),
+                        meeting_url=meeting_url,
+                        calendar_url=calendar_url,
+                        duration_minutes=duration_minutes,
                     ))
             
             return meeting_events
@@ -236,6 +245,9 @@ class GoogleCalendarService:
                         ))
                 
                 if attendee_infos:
+                    meeting_url = self._extract_meeting_url(event)
+                    calendar_url = event.get('htmlLink')
+                    duration_minutes = int((end_time - start_time).total_seconds() // 60)
                     meeting_events.append(MeetingEvent(
                         event_id=event['id'],
                         title=event.get('summary', 'Untitled Meeting'),
@@ -243,11 +255,37 @@ class GoogleCalendarService:
                         end_time=end_time,
                         attendees=attendee_infos,
                         description=event.get('description'),
-                        location=event.get('location')
+                        location=event.get('location'),
+                        meeting_url=meeting_url,
+                        calendar_url=calendar_url,
+                        duration_minutes=duration_minutes,
                     ))
-            
+
             return meeting_events
-            
         except HttpError as error:
             print(f'An error occurred: {error}')
-            return [] 
+            return []
+
+    def _extract_meeting_url(self, event: dict) -> Optional[str]:
+        """Best-effort extraction of a conferencing URL from a Calendar event."""
+        # Google Meet direct fields
+        url = event.get('hangoutLink') or event.get('hangoutLink')
+        if url:
+            return url
+        conf = event.get('conferenceData') or {}
+        for ep in conf.get('entryPoints', []) or []:
+            if isinstance(ep, dict) and ep.get('entryPointType') in ('video', 'more'):
+                uri = ep.get('uri') or ep.get('url')
+                if isinstance(uri, str) and uri.startswith('http'):
+                    return uri
+        # Scan description/location for common providers
+        text = ' '.join([
+            str(event.get('description') or ''),
+            str(event.get('location') or ''),
+        ])
+        pattern = re.compile(r"https?://[^\s<>]+", re.IGNORECASE)
+        for m in pattern.finditer(text):
+            u = m.group(0)
+            if any(p in u.lower() for p in ("meet.google.com", "zoom.us", "teams.microsoft.com", "webex.com")):
+                return u
+        return None
