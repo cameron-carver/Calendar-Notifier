@@ -14,7 +14,8 @@ from google.oauth2.credentials import Credentials
 # OAuth scopes needed for the application
 SCOPES = [
     'https://www.googleapis.com/auth/calendar',
-    'https://www.googleapis.com/auth/gmail.send'
+    'https://www.googleapis.com/auth/gmail.send',
+    'https://www.googleapis.com/auth/gmail.readonly',
 ]
 
 def setup_oauth():
@@ -31,7 +32,13 @@ def setup_oauth():
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             print("🔄 Refreshing expired credentials...")
-            creds.refresh(Request())
+            try:
+                creds.refresh(Request())
+            except Exception as e:
+                print(f"⚠️  Refresh failed ({e}). Scopes may have changed — re-authenticating...")
+                creds = None
+                if os.path.exists(token_file):
+                    os.remove(token_file)
         else:
             print("🔐 Setting up new OAuth credentials...")
             print("\n📋 Instructions:")
@@ -150,6 +157,7 @@ if __name__ == "__main__":
         print("\n🎉 Setup complete! Your Morning Brief app should now be able to:")
         print("   📅 Access your Google Calendar")
         print("   📧 Send emails via Gmail")
+        print("   📬 Read Gmail replies (for journal prompts)")
         
     except Exception as e:
         print(f"❌ Error during setup: {e}")

@@ -18,12 +18,32 @@ import re
 
 class GoogleCalendarService:
     """Service for interacting with Google Calendar API."""
-    
+
     SCOPES = ['https://www.googleapis.com/auth/calendar']
-    
-    def __init__(self) -> None:
+
+    def __init__(self, calendar_ids: Optional[List[str]] = None) -> None:
+        """
+        Initialize calendar service.
+
+        Args:
+            calendar_ids: List of calendar IDs to query.
+                         If None, uses global settings.
+                         If empty list, uses ['primary'].
+        """
         self.service = None
         self._authenticate()
+
+        # Handle calendar IDs
+        if calendar_ids is None:
+            # Backward compatibility - use global settings
+            if settings.google_calendar_ids:
+                self.calendar_ids = [c.strip() for c in settings.google_calendar_ids.split(',') if c.strip()]
+            else:
+                self.calendar_ids = ['primary']
+        elif len(calendar_ids) == 0:
+            self.calendar_ids = ['primary']
+        else:
+            self.calendar_ids = calendar_ids
     
     def _authenticate(self) -> None:
         """Authenticate with Google Calendar API."""
@@ -79,54 +99,62 @@ class GoogleCalendarService:
         time_max = end_utc.isoformat().replace('+00:00', 'Z')
         
         try:
-            # Determine calendars to query
-            calendar_ids: List[str]
-            if settings.google_calendar_ids:
-                calendar_ids = [c.strip() for c in settings.google_calendar_ids.split(',') if c.strip()]
-            else:
-                calendar_ids = ['primary']
-
             meeting_events: List[MeetingEvent] = []
-            for calendar_id in calendar_ids:
-                # Cache key per calendar/date window
-                cache_key = make_key("gcal", calendar_id or "primary", time_min, time_max)
-                cached_items = None
+            seen_event_ids = set()  # Deduplicate events across calendars
+
+            # Fetch from each configured calendar
+            for calendar_id in self.calendar_ids:
                 try:
-                    cached_items = RedisCache.get_json_sync(cache_key)
-                except Exception:
+                    # Cache key per calendar/date window
+                    cache_key = make_key("gcal", calendar_id or "primary", time_min, time_max)
                     cached_items = None
-                if cached_items:
-                    events_result = {"items": cached_items}
-                else:
-                    # Call the Calendar API for each calendar with simple retry
-                    attempt = 0
-                    while True:
-                        try:
-                            events_result = self.service.events().list(
-                                calendarId=calendar_id,
-                                timeMin=time_min,
-                                timeMax=time_max,
-                                singleEvents=True,
-                                orderBy='startTime'
-                            ).execute()
-                            # Cache items for short TTL to avoid repeated calls in same run
-                            items = events_result.get('items', [])
+                    try:
+                        cached_items = RedisCache.get_json_sync(cache_key)
+                    except Exception:
+                        cached_items = None
+                    if cached_items:
+                        events_result = {"items": cached_items}
+                    else:
+                        # Call the Calendar API for each calendar with simple retry
+                        attempt = 0
+                        while True:
                             try:
-                                RedisCache.set_json_sync(cache_key, items, ttl_seconds=600)
-                            except Exception:
-                                pass
-                            break
-                        except HttpError as error:
-                            attempt += 1
-                            if attempt >= 3 or not should_retry_http_error(error):
-                                raise
-                            pytime.sleep(0.5 * attempt)
-                
-                events = events_result.get('items', [])
+                                events_result = self.service.events().list(
+                                    calendarId=calendar_id,
+                                    timeMin=time_min,
+                                    timeMax=time_max,
+                                    singleEvents=True,
+                                    orderBy='startTime'
+                                ).execute()
+                                # Cache items for short TTL to avoid repeated calls in same run
+                                items = events_result.get('items', [])
+                                try:
+                                    RedisCache.set_json_sync(cache_key, items, ttl_seconds=600)
+                                except Exception:
+                                    pass
+                                break
+                            except HttpError as error:
+                                attempt += 1
+                                if attempt >= 3 or not should_retry_http_error(error):
+                                    raise
+                                pytime.sleep(0.5 * attempt)
+
+                    events = events_result.get('items', [])
+                except HttpError as error:
+                    # Log error but continue with other calendars
+                    print(f"Failed to fetch calendar {calendar_id}: {error}")
+                    continue
+
                 for event in events:
-                    # Filter recurring meetings (exclude instances of recurring series)
-                    if settings.filter_exclude_recurring and (event.get('recurringEventId') or event.get('recurrence')):
+                    # Skip duplicates (same event could appear in multiple calendars)
+                    event_id = event.get('id')
+                    if event_id in seen_event_ids:
                         continue
+                    seen_event_ids.add(event_id)
+
+                    # Tag recurring instances (they get lightweight rendering, no enrichment)
+                    is_recurring = bool(event.get('recurringEventId') or event.get('recurrence'))
+
                     attendees = event.get('attendees', [])
                 
                     # Parse event times (handles timezone-aware strings)
@@ -137,13 +165,24 @@ class GoogleCalendarService:
                         event['end'].get('dateTime', event['end'].get('date'))
                     )
                 
+                    # Extract names from event title for fallback
+                    # Common patterns: "Alice Smith and Bob Jones", "Alice / Bob", "Alice <> Bob"
+                    title_names = self._extract_names_from_title(
+                        event.get('summary', ''), (calendar_id or '').lower()
+                    )
+
                     # Extract attendee information
                     attendee_infos = []
                     for attendee in attendees:
                         if attendee.get('email'):
+                            display = attendee.get('displayName', '')
+                            if not display or display == attendee['email'].split('@')[0]:
+                                # Try to match from title names
+                                local = attendee['email'].split('@')[0].lower()
+                                display = self._match_title_name(local, title_names) or display or local
                             attendee_infos.append(AttendeeInfo(
                                 email=attendee['email'],
-                                name=attendee.get('displayName', attendee['email'].split('@')[0])
+                                name=display,
                             ))
 
                     # Smart filter 1: only include if there is at least one attendee besides the calendar owner
@@ -191,6 +230,7 @@ class GoogleCalendarService:
                         meeting_url=meeting_url,
                         calendar_url=calendar_url,
                         duration_minutes=duration_minutes,
+                        is_recurring=is_recurring,
                     ))
             
             return meeting_events
@@ -288,4 +328,68 @@ class GoogleCalendarService:
             u = m.group(0)
             if any(p in u.lower() for p in ("meet.google.com", "zoom.us", "teams.microsoft.com", "webex.com")):
                 return u
+        return None
+
+    @staticmethod
+    def _extract_names_from_title(title: str, owner_email: str) -> List[str]:
+        """Extract participant names from an event title.
+
+        Common Calendly/scheduling patterns:
+          "Isabela Mendonca and Cameron Carver"
+          "Cameron Carver / Andres Kupervaser-Gould (The Network)"
+          "Cameron <> Noemi re Togy"
+        Returns a list of name strings (excluding the calendar owner).
+        """
+        if not title:
+            return []
+        # Split on common delimiters
+        parts = re.split(r'\s+(?:and|&|/|<>|,)\s+', title, flags=re.IGNORECASE)
+        names = []
+        # Derive owner first/last from email for exclusion
+        owner_local = owner_email.split('@')[0].lower() if '@' in owner_email else owner_email.lower()
+        for part in parts:
+            # Strip parenthetical context: "(The Network)", "re Togy"
+            clean = re.sub(r'\s*\(.*?\)\s*', ' ', part).strip()
+            clean = re.sub(r'\s+re\s+.*$', '', clean, flags=re.IGNORECASE).strip()
+            if not clean:
+                continue
+            # Skip if it looks like the owner
+            if owner_local and (
+                clean.lower().startswith(owner_local)
+                or owner_local.startswith(clean.split()[0].lower())
+            ):
+                continue
+            # Must have at least 2 chars and look like a name (starts with uppercase or has spaces)
+            if len(clean) >= 2:
+                names.append(clean)
+        return names
+
+    @staticmethod
+    def _match_title_name(email_local: str, title_names: List[str]) -> Optional[str]:
+        """Try to match an email local part to one of the extracted title names.
+
+        Heuristic: if the email local part appears as a prefix of a title name's
+        first or last name (case-insensitive), return that title name.
+        e.g. email_local="imendonca" → matches "Isabela Mendonca" (last name prefix)
+        e.g. email_local="abby" → matches "Abby Nawrocki" (first name prefix)
+        """
+        if not email_local or not title_names:
+            return None
+        local = email_local.lower().replace('.', '').replace('_', '').replace('-', '')
+        for name in title_names:
+            # Check if local matches first name, last name, or first-initial+lastname
+            name_parts = name.split()
+            for np in name_parts:
+                np_clean = np.lower().replace('-', '').replace("'", '')
+                if len(np_clean) >= 2 and (local.startswith(np_clean) or np_clean.startswith(local)):
+                    return name
+            # Also check concatenated: "isabela mendonca" → "isabelamendonca" contains "imendonca"?
+            concat = ''.join(p.lower() for p in name_parts)
+            if len(local) >= 3 and local in concat:
+                return name
+            # First initial + last name: "imendonca" → i + mendonca
+            if len(name_parts) >= 2:
+                fi_last = (name_parts[0][0] + name_parts[-1]).lower().replace('-', '')
+                if local == fi_last or fi_last.startswith(local) or local.startswith(fi_last):
+                    return name
         return None

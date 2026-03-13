@@ -51,6 +51,26 @@ class Settings(BaseSettings):
     enable_talking_points: bool = True
     talking_points_use_llm: bool = False
     talking_points_max: int = 2
+
+    # Owner Profile
+    owner_name: str = ""
+    owner_title: str = ""
+    owner_company: str = ""
+    owner_focus: str = ""
+    owner_email: str = ""
+    owner_linkedin: str = ""
+
+    # Web enrichment (OpenAI web search fallback when Affinity has no data)
+    enable_web_enrichment: bool = True
+
+    # Network Builder integration (shared database)
+    network_builder_database_url: Optional[str] = None
+
+    # Persona Classification (comma-separated domains)
+    persona_portfolio_domains: Optional[str] = None
+    persona_lp_domains: Optional[str] = None
+    persona_service_domains: Optional[str] = None
+    persona_coinvestor_patterns: str = ".vc,ventures,capital,partners"
     
     class Config:
         env_file = ".env"

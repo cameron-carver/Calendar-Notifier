@@ -46,16 +46,19 @@ class AffinityClient:
                     params={"term": email}
                 )
                 response.raise_for_status()
-                
+
                 data = response.json()
                 persons = data.get("data", [])
-                
-                if persons:
-                    person = persons[0]
-                    await RedisCache.set_json(cache_key, person, ttl_seconds=60 * 60 * 24)
-                    return person  # Return the first match
+
+                # Filter to find exact email match (term search is fuzzy)
+                email_lower = email.lower()
+                for person in persons:
+                    person_emails = [e.lower() for e in person.get("emailAddresses", [])]
+                    if email_lower in person_emails:
+                        await RedisCache.set_json(cache_key, person, ttl_seconds=60 * 60 * 24)
+                        return person
                 return None
-                
+
             except httpx.HTTPStatusError as e:
                 print(f"HTTP error occurred: {e}")
                 return None
@@ -189,6 +192,52 @@ class AffinityClient:
                                 stack.append(v)
         return None
 
+    @staticmethod
+    def _extract_list_stage(list_entries: List[Dict[str, Any]]) -> tuple:
+        """Extract list name and pipeline stage from list entries.
+
+        Returns (list_name, stage) — either may be None.
+        Looks for fields named Stage, Status, Pipeline Stage, etc.
+        """
+        _STAGE_FIELD_NAMES = {
+            "stage", "status", "pipeline stage", "deal stage",
+            "pipeline status", "investment stage",
+        }
+        list_name = None
+        stage = None
+        for entry in list_entries:
+            # List name
+            entry_list_name = None
+            list_obj = entry.get("list")
+            if isinstance(list_obj, dict):
+                entry_list_name = list_obj.get("name")
+            elif isinstance(list_obj, str):
+                entry_list_name = list_obj
+            if not entry_list_name:
+                entry_list_name = entry.get("list_name")
+
+            # Look for stage/status field
+            for field in entry.get("fields", []):
+                fname = (field.get("name") or "").strip().lower()
+                if fname in _STAGE_FIELD_NAMES:
+                    val = field.get("value")
+                    if isinstance(val, str) and val:
+                        stage = val
+                        list_name = entry_list_name
+                        return (list_name, stage)
+                    if isinstance(val, dict):
+                        # Dropdown fields may be {text: "..."} or {name: "..."}
+                        stage = val.get("text") or val.get("name") or val.get("value")
+                        if stage:
+                            list_name = entry_list_name
+                            return (list_name, stage)
+
+            # If we found a list name but no stage, still record it
+            if entry_list_name and not list_name:
+                list_name = entry_list_name
+
+        return (list_name, stage)
+
     @async_retry((httpx.HTTPError, Exception), tries=2, base_delay=0.5, max_delay=1.5, should_retry=should_retry_http_error)
     async def get_person_v1(self, person_id: int) -> Optional[Dict[str, Any]]:
         """Fallback to Affinity v1 person endpoint to fetch social profiles if available."""
@@ -208,6 +257,48 @@ class AffinityClient:
             except Exception as e:
                 print(f"Error getting v1 person {person_id}: {e}")
                 return None
+
+    @async_retry((httpx.HTTPError, Exception), tries=2, base_delay=0.5, max_delay=1.5, should_retry=should_retry_http_error)
+    async def find_person_v1_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        """Search for a person in v1 API by email. Returns the v1 person record with social profiles."""
+        cache_key = make_key("aff", "v1_person_email", email.lower())
+        cached = await RedisCache.get_json(cache_key)
+        if cached:
+            return cached
+        async with httpx.AsyncClient() as client:
+            try:
+                # v1 search by term (email)
+                resp = await client.get(
+                    f"{self.V1_BASE_URL}/v1/persons",
+                    headers=self._v1_basic_auth,
+                    params={"term": email}
+                )
+                resp.raise_for_status()
+                persons = resp.json()
+                if persons and isinstance(persons, list) and len(persons) > 0:
+                    # Get first match, then fetch full details for social profiles
+                    v1_id = persons[0].get("id")
+                    if v1_id:
+                        full_person = await self.get_person_v1(v1_id)
+                        if full_person:
+                            await RedisCache.set_json(cache_key, full_person, ttl_seconds=60 * 60 * 24)
+                            return full_person
+                return None
+            except Exception as e:
+                print(f"Error finding v1 person by email {email}: {e}")
+                return None
+
+    def _extract_linkedin_from_v1(self, v1_person: Dict[str, Any]) -> Optional[str]:
+        """Extract LinkedIn URL from v1 person record."""
+        # Check direct linkedin_url field
+        candidate = v1_person.get("linkedin_url")
+        if isinstance(candidate, str) and "linkedin.com" in candidate:
+            return candidate
+        # Check social_profiles array
+        for prof in (v1_person.get("social_profiles") or []):
+            if prof.get("type") == "linkedin" and isinstance(prof.get("url"), str):
+                return prof.get("url")
+        return None
     
     async def get_person_notes(self, person_id: int, limit: int = 5) -> List[Dict[str, Any]]:
         """Get recent notes for a person."""
@@ -291,19 +382,22 @@ class AffinityClient:
                         entries = await self.get_person_list_entries(person_data["id"], limit=50)
                         linkedin_url = self._extract_linkedin_from_fields(entries)
 
-                    # Final fallback: v1 person endpoint social profiles
+                    # Extract Affinity list name + pipeline stage from entries
+                    if not hasattr(self, '_entries_fetched'):
+                        self._entries_fetched = False
+                    if entries is None:
+                        entries = await self.get_person_list_entries(person_data["id"], limit=50)
+                    list_name, stage = self._extract_list_stage(entries)
+                    if list_name:
+                        attendee.affinity_list_name = list_name
+                    if stage:
+                        attendee.affinity_stage = stage
+
+                    # Final fallback: search v1 API by email (v1/v2 IDs are different!)
                     if not linkedin_url:
-                        v1_person = await self.get_person_v1(person_data["id"])
+                        v1_person = await self.find_person_v1_by_email(attendee.email)
                         if v1_person:
-                            # common shapes: person.get('linkedin_url') or in person.get('social_profiles')
-                            candidate = v1_person.get("linkedin_url")
-                            if isinstance(candidate, str) and "linkedin.com" in candidate:
-                                linkedin_url = candidate
-                            else:
-                                for prof in (v1_person.get("social_profiles") or []):
-                                    if prof.get("type") == "linkedin" and isinstance(prof.get("url"), str):
-                                        linkedin_url = prof.get("url")
-                                        break
+                            linkedin_url = self._extract_linkedin_from_v1(v1_person)
                     
                     # Get recent notes for context
                     notes = await self.get_person_notes(person_data["id"], limit=3)
@@ -324,10 +418,23 @@ class AffinityClient:
                             if token.startswith("http://") or token.startswith("https://"):
                                 materials.append(token)
                     
+                    # Fetch company details for description
+                    company_description = None
+                    if company_domain:
+                        company_details = await self.get_company_by_domain(company_domain)
+                        if company_details:
+                            company_description = company_details.get("description")
+                            # Also get website if we don't have it
+                            if not website_url:
+                                website_url = company_details.get("website_url") or company_details.get("domain")
+                                if website_url and not website_url.startswith("http"):
+                                    website_url = f"https://{website_url}"
+
                     # Update attendee info
                     attendee.company = company_name
                     attendee.company_domain = company_domain
                     attendee.website_url = website_url
+                    attendee.company_description = company_description
                     attendee.linkedin_url = linkedin_url
                     if job_title:
                         attendee.title = job_title
@@ -351,17 +458,68 @@ class AffinityClient:
                     params={"name": company_name}
                 )
                 response.raise_for_status()
-                
+
                 data = response.json()
                 companies = data.get("data", [])
-                
+
                 if companies:
                     return companies[0]
                 return None
-                
+
             except httpx.HTTPStatusError as e:
                 print(f"HTTP error occurred: {e}")
                 return None
             except Exception as e:
                 print(f"Error getting company info: {e}")
+                return None
+
+    @async_retry((httpx.HTTPError, Exception), tries=2, base_delay=0.5, max_delay=1.5, should_retry=should_retry_http_error)
+    async def get_company_details(self, company_id: int) -> Optional[Dict[str, Any]]:
+        """Get detailed company info by ID (v2 API)."""
+        cache_key = make_key("aff", "company_details", str(company_id))
+        cached = await RedisCache.get_json(cache_key)
+        if cached:
+            return cached
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(
+                    f"{self.BASE_URL}/companies/{company_id}",
+                    headers=self.headers
+                )
+                response.raise_for_status()
+                payload = response.json()
+                await RedisCache.set_json(cache_key, payload, ttl_seconds=60 * 60 * 48)
+                return payload
+            except Exception as e:
+                print(f"Error getting company details {company_id}: {e}")
+                return None
+
+    @async_retry((httpx.HTTPError, Exception), tries=2, base_delay=0.5, max_delay=1.5, should_retry=should_retry_http_error)
+    async def get_company_by_domain(self, domain: str) -> Optional[Dict[str, Any]]:
+        """Search for a company by domain and return full details."""
+        cache_key = make_key("aff", "company_domain", domain.lower())
+        cached = await RedisCache.get_json(cache_key)
+        if cached:
+            return cached
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(
+                    f"{self.BASE_URL}/companies",
+                    headers=self.headers,
+                    params={"term": domain}
+                )
+                response.raise_for_status()
+                data = response.json()
+                companies = data.get("data", [])
+                if companies:
+                    # Get the first match and fetch full details
+                    company_id = companies[0].get("id")
+                    if company_id:
+                        details = await self.get_company_details(company_id)
+                        if details:
+                            await RedisCache.set_json(cache_key, details, ttl_seconds=60 * 60 * 48)
+                            return details
+                return None
+            except Exception as e:
+                print(f"Error finding company by domain {domain}: {e}")
                 return None 

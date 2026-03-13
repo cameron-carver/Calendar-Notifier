@@ -22,13 +22,17 @@ celery_app.conf.update(
     task_soft_time_limit=25 * 60,  # 25 minutes
 ) 
 
-# Optional Celery Beat schedule (daily brief)
+# Celery Beat schedule (daily brief + evening journal + weekly maintenance)
 delivery_time = getattr(settings, 'default_delivery_time', '08:00')
 hour, minute = map(int, delivery_time.split(':'))
 celery_app.conf.beat_schedule = {
     'daily-morning-brief': {
         'task': 'app.tasks.brief_tasks.generate_and_send_morning_brief',
         'schedule': crontab(hour=hour, minute=minute),
+    },
+    'daily-evening-journal': {
+        'task': 'app.tasks.brief_tasks.send_journal_prompt',
+        'schedule': crontab(hour=19, minute=0),  # 7pm daily
     },
     'weekly-token-refresh': {
         'task': 'app.tasks.brief_tasks.refresh_tokens',

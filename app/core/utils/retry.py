@@ -1,5 +1,6 @@
 import asyncio
 import random
+import time
 from typing import Callable, Type, Tuple, Any, Optional
 
 
@@ -54,7 +55,7 @@ def retry(
                     attempt += 1
                     if attempt >= tries or (should_retry and not should_retry(exc)):
                         raise
-                    asyncio.sleep(delay + random.uniform(0, delay / 2))
+                    time.sleep(delay + random.uniform(0, delay / 2))
                     delay = min(delay * 2, max_delay)
         return wrapper
     return decorator
